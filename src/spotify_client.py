@@ -30,6 +30,12 @@ class SpotifyError(RuntimeError):
     pass
 
 
+class RateLimitError(SpotifyError):
+    """Raised when Spotify keeps returning 429 after our short retries — a signal
+    that the app is being throttled hard, so callers can stop early instead of
+    sleeping through a long penalty."""
+
+
 class SpotifyClient:
     def __init__(self, client_id: str, client_secret: str, refresh_token: str,
                  session: requests.Session | None = None, log=None):
@@ -83,12 +89,16 @@ class SpotifyClient:
             headers={"Authorization": f"Bearer {self._token()}"},
             params=params, json=json, timeout=30,
         )
-        # Rate limited: honour Retry-After (capped so a bad value can't stall us).
-        if resp.status_code == 429 and _retry < 6:
-            wait = min(int(resp.headers.get("Retry-After", "2")) + 1, 60)
-            self._log(f"  rate limited by Spotify — waiting {wait}s (retry {_retry + 1}/6)")
-            time.sleep(wait)
-            return self._request(method, path, params=params, json=json, _retry=_retry + 1)
+        # Rate limited: retry a couple of times with a short capped wait. If it
+        # persists, the app is being throttled hard — raise so callers can stop
+        # early rather than sleeping through a long (e.g. 60s x N) penalty.
+        if resp.status_code == 429:
+            if _retry < 2:
+                wait = min(int(resp.headers.get("Retry-After", "2")) + 1, 30)
+                self._log(f"  rate limited by Spotify — waiting {wait}s (retry {_retry + 1}/2)")
+                time.sleep(wait)
+                return self._request(method, path, params=params, json=json, _retry=_retry + 1)
+            raise RateLimitError(f"{method} {path}: still rate limited (429) after retries")
         # Token expired mid-flight: force one refresh and retry.
         if resp.status_code == 401 and _retry < 1:
             self._access_token = None

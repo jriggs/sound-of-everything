@@ -111,8 +111,25 @@ All the knobs live in `config.yaml`:
 - **strategy** — `fresh` (songs rotate over time) or `faithful` (everynoise's
   fixed pick per genre; never changes).
 - **refresh_batch** — how many genres get a new song each run (higher rotates the
-  whole list faster).
-- **seed_from_everynoise**, **market**, **max_tracks** — see the comments in the file.
+  whole list faster). Kept modest for the weekly cloud run so it stays under
+  Spotify's rate limit.
+- **pause_ms**, **seed_from_everynoise**, **market**, **max_tracks** — see the
+  comments in the file.
+
+**Live progress:** every run prints timestamped progress (genres searched, rate,
+ETA) and says when Spotify is rate-limiting. If throttling is heavy, the run
+refreshes what it can, keeps the rest from cache, and finishes rather than hanging.
+
+**Big local catch-up:** to rotate a lot of genres at once, run locally with an
+override instead of raising the weekly default:
+
+```
+REFRESH_BATCH=2000 python -m src.build_playlist
+```
+
+Spotify's rate limit is **per app** (your Client ID), shared by local and cloud
+runs, so spacing big runs out helps. `PAUSE_MS` similarly overrides the pause
+between searches.
 
 ## How the "fresh" refresh works
 
