@@ -110,11 +110,11 @@ All the knobs live in `config.yaml`:
 - **name / description / public** — the playlist's details.
 - **strategy** — `fresh` (songs rotate over time) or `faithful` (everynoise's
   fixed pick per genre; never changes).
-- **refresh_batch** — how many genres get re-searched each run, **most stale
-  first** (higher rotates the whole list faster; default 500). A genre only
-  advances in the queue if it actually gets a new track — if it's throttled or
-  returns nothing, it stays most-stale and is retried next run. If Spotify
-  throttles hard, the circuit breaker stops early and the run still finishes.
+- **refresh_batch** — how many genres to re-search each run, **most stale first**.
+  Default **0 = try them all**; the run gets as far as Spotify's rate limit
+  allows, the circuit breaker stops it, and whatever wasn't reached stays most-
+  stale and is picked up first next run. A genre only advances in the queue when
+  search returns a real track. Set a positive number to cap attempts per run.
 - **pause_ms**, **seed_from_everynoise**, **market**, **max_tracks** — see the
   comments in the file.
 

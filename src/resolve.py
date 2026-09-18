@@ -58,7 +58,7 @@ def resolve_faithful(genres: list[Genre]) -> list[tuple[Genre, str]]:
 
 def resolve_fresh(genres: list[Genre], client: SpotifyClient, cache: dict,
                   cfg: dict, market: str, log=print) -> list[tuple[Genre, str]]:
-    refresh_batch = int(cfg.get("refresh_batch", 500))
+    refresh_batch = int(cfg.get("refresh_batch", 0))  # 0 = try every genre this run
     seed = bool(cfg.get("seed_from_everynoise", True))
     pause = max(float(cfg.get("pause_ms", 100)), 0) / 1000.0  # smooth request rate
 
@@ -92,9 +92,13 @@ def resolve_fresh(genres: list[Genre], client: SpotifyClient, cache: dict,
     #    breaker so a hard throttle ends the run quickly instead of spinning.
     present = [g for g in genres if g.name in cache]
     present.sort(key=lambda g: cache[g.name].get("updated_utc", ""))
-    to_refresh = present[:max(refresh_batch, 0)]
+    # refresh_batch <= 0 means "try them all", most-stale first; the circuit
+    # breaker stops the run when Spotify throttles, and whatever wasn't reached
+    # stays most-stale and is picked up first next run.
+    to_refresh = present if refresh_batch <= 0 else present[:refresh_batch]
     total = len(to_refresh)
-    log(f"  refreshing up to {total} genres via search (batch={refresh_batch}, pause={int(pause * 1000)}ms)")
+    scope = "all" if refresh_batch <= 0 else f"batch={refresh_batch}"
+    log(f"  refreshing up to {total} genres via search ({scope}, pause={int(pause * 1000)}ms)")
     t0 = time.time()
     done = rl_streak = 0
     for i, g in enumerate(to_refresh, 1):
