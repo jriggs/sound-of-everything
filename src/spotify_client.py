@@ -82,9 +82,9 @@ class SpotifyClient:
             headers={"Authorization": f"Bearer {self._token()}"},
             params=params, json=json, timeout=30,
         )
-        # Rate limited: honour Retry-After.
+        # Rate limited: honour Retry-After (capped so a bad value can't stall us).
         if resp.status_code == 429 and _retry < 6:
-            wait = int(resp.headers.get("Retry-After", "2")) + 1
+            wait = min(int(resp.headers.get("Retry-After", "2")) + 1, 60)
             time.sleep(wait)
             return self._request(method, path, params=params, json=json, _retry=_retry + 1)
         # Token expired mid-flight: force one refresh and retry.

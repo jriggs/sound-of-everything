@@ -27,6 +27,8 @@ build:
   refresh_batch: 500        # genres re-searched per run, oldest first (rotates
                             # the whole list through search over ~13 weeks at 500).
                             # New genres are always resolved. Raise to rotate faster.
+  pause_ms: 100             # small pause between searches to smooth the request
+                            # rate and avoid tripping Spotify's rate limiter.
   seed_from_everynoise: true  # first time a genre is seen, seed everynoise's pick
                             # instantly (high quality), then rotate it to a search
                             # pick on a later run. false = search every new genre now.

@@ -19,6 +19,7 @@ Two strategies (set ``build.strategy`` in config.yaml):
 from __future__ import annotations
 
 import datetime as dt
+import time
 
 from .genres import Genre
 from .spotify_client import SpotifyClient
@@ -67,6 +68,7 @@ def resolve_fresh(genres: list[Genre], client: SpotifyClient, cache: dict,
                   cfg: dict, market: str, log=print) -> list[tuple[Genre, str]]:
     refresh_batch = int(cfg.get("refresh_batch", 500))
     seed = bool(cfg.get("seed_from_everynoise", True))
+    pause = max(float(cfg.get("pause_ms", 100)), 0) / 1000.0  # smooth request rate
 
     # 1. New genres: seed instantly from everynoise (rotated to search later), or
     #    resolve immediately via search if seeding is disabled.
@@ -81,6 +83,7 @@ def resolve_fresh(genres: list[Genre], client: SpotifyClient, cache: dict,
             entry = _resolve_one(client, g, market)
             if entry:
                 cache[g.name] = entry
+            time.sleep(pause)
 
     # 2. Rotating refresh: re-search the oldest-cached genres still in the list.
     present = [g for g in genres if g.name in cache]
@@ -92,6 +95,7 @@ def resolve_fresh(genres: list[Genre], client: SpotifyClient, cache: dict,
             cache[g.name] = entry
         else:  # keep existing pick, but bump so we don't retry it all run
             cache[g.name]["updated_utc"] = _now()
+        time.sleep(pause)
         if i % 200 == 0:
             log(f"  refreshed {i}/{len(to_refresh)} genres via search")
     if to_refresh:
