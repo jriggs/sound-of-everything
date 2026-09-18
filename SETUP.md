@@ -115,6 +115,9 @@ All the knobs live in `config.yaml`:
   allows, the circuit breaker stops it, and whatever wasn't reached stays most-
   stale and is picked up first next run. A genre only advances in the queue when
   search returns a real track. Set a positive number to cap attempts per run.
+- **search_pool** — how many search results to consider per genre; the first one
+  not already in the playlist is chosen, so no two genres share a song and a
+  refresh always picks a *different* track than before.
 - **pause_ms**, **seed_from_everynoise**, **market**, **max_tracks** — see the
   comments in the file.
 
@@ -139,12 +142,16 @@ Songs are chosen with Spotify **search** — the only track-discovery feature st
 available to development-mode apps under the 2026 API rules (bulk track lookups,
 artist top-tracks, and the popularity field are all blocked).
 
-To keep weekly runs quick, choices are cached in `data/tracks.json`:
+Choices are cached in `data/tracks.json`:
 
 - A newly seen genre is seeded instantly with everynoise's pick.
-- Each run re-searches only the oldest `refresh_batch` genres, so the whole list
-  gradually rotates to fresh picks (about 13 weeks at 500 per run) and then keeps
-  cycling.
+- Each run re-searches genres **most-stale-first**, and for each it picks the top
+  search result **not already in the playlist** — so no duplicates, and every
+  refresh yields a genuinely different song. A genre only advances in the queue
+  when it actually gets a new track.
+- By default (`refresh_batch: 0`) a run tries every genre; when Spotify throttles,
+  the circuit breaker stops it and the rest are picked up first next run. Over
+  successive runs the whole list keeps cycling to fresh songs.
 
 The cache survives between cloud runs because the weekly job commits it back to
 the repository.

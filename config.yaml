@@ -33,6 +33,9 @@ build:
                             # (REFRESH_BATCH env var overrides this.)
   pause_ms: 100             # small pause between searches to smooth the request
                             # rate and avoid tripping Spotify's rate limiter.
+  search_pool: 10           # candidates fetched per genre; the first one not
+                            # already in the playlist is chosen, so no two genres
+                            # share a song and a refresh always changes the track.
   seed_from_everynoise: true  # first time a genre is seen, seed everynoise's pick
                             # instantly (high quality), then rotate it to a search
                             # pick on a later run. false = search every new genre now.
