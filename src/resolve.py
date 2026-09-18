@@ -52,16 +52,6 @@ def search_track_uri(client: SpotifyClient, genre: str, market: str) -> str | No
         return None
 
 
-def _resolve_one(client: SpotifyClient, g: Genre, market: str) -> dict | None:
-    """Search for a current track for this genre; fall back to everynoise's pick."""
-    uri = search_track_uri(client, g.name, market)
-    if uri:
-        return {"uri": uri, "source": "search", "updated_utc": _now()}
-    if g.track_id:
-        return {"uri": f"spotify:track:{g.track_id}", "source": "everynoise", "updated_utc": _now()}
-    return None
-
-
 def resolve_faithful(genres: list[Genre]) -> list[tuple[Genre, str]]:
     return [(g, f"spotify:track:{g.track_id}") for g in genres if g.track_id]
 
@@ -83,16 +73,19 @@ def resolve_fresh(genres: list[Genre], client: SpotifyClient, cache: dict,
     if new:
         log(f"  {len(new)} new genre(s)")
     for g in new:
-        if not g.track_id and not seed:
-            continue
         if seed and g.track_id:
             cache[g.name] = _seed_entry(g)
             continue
-        try:  # seed disabled: search now, but degrade to everynoise if throttled
-            entry = _resolve_one(client, g, market)
+        if not g.track_id:
+            continue
+        try:  # seed disabled: search now, but degrade to everynoise if throttled/empty
+            uri = search_track_uri(client, g.name, market)
         except RateLimitError:
-            entry = None
-        cache[g.name] = entry or (_seed_entry(g) if g.track_id else cache.get(g.name))
+            uri = None
+        if uri:
+            cache[g.name] = {"uri": uri, "source": "search", "updated_utc": _now()}
+        else:  # seed at EPOCH so it stays most-stale and gets searched next run
+            cache[g.name] = _seed_entry(g)
         time.sleep(pause)
 
     # 2. Rotating refresh: re-search the oldest-cached genres, with a circuit
@@ -106,27 +99,28 @@ def resolve_fresh(genres: list[Genre], client: SpotifyClient, cache: dict,
     done = rl_streak = 0
     for i, g in enumerate(to_refresh, 1):
         try:
-            entry = _resolve_one(client, g, market)
+            uri = search_track_uri(client, g.name, market)
         except RateLimitError:
             rl_streak += 1
             if rl_streak >= rl_stop:
-                log(f"    Spotify is throttling hard — stopping after {done} refreshed "
-                    f"(of {total} planned). Cached picks kept; the rest resume next run.")
+                log(f"    Spotify is throttling hard — stopping after {done} updated "
+                    f"(of {total} planned). Un-updated genres stay 'most stale' for next run.")
                 break
-            continue  # leave timestamp untouched so this genre retries next run
+            continue  # skipped: leave timestamp so it stays most-stale, retried next run
         rl_streak = 0
-        if entry:
-            cache[g.name] = entry
-        else:  # no result: keep existing pick, bump so we don't retry it all run
-            cache[g.name]["updated_utc"] = _now()
-        done += 1
+        # Only advance the freshness clock when search actually returns a track. If
+        # it returns nothing, keep the existing pick AND its old timestamp so this
+        # genre stays near the front of the queue and is retried next run.
+        if uri:
+            cache[g.name] = {"uri": uri, "source": "search", "updated_utc": _now()}
+            done += 1
         time.sleep(pause)
-        if done % 50 == 0:
+        if i % 50 == 0 or i == total:
             el = time.time() - t0
-            rate = done / el if el else 0
+            rate = i / el if el else 0
             eta = (total - i) / rate if rate else 0
-            log(f"    {done}/{total} searched — {rate:.1f}/s, eta {eta:4.0f}s")
-    log(f"  refreshed {done} genres via search this run")
+            log(f"    {i}/{total} tried, {done} updated — {rate:.1f}/s, eta {eta:4.0f}s")
+    log(f"  updated {done} of {total} tried this run (most-stale first)")
 
     # 3. Build ordered pairs from the cache, following the current genre order.
     n_search = sum(1 for v in cache.values() if v.get("source") == "search")
