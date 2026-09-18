@@ -17,6 +17,7 @@ Spotify requires https or a loopback address; use 127.0.0.1 (not "localhost").
 from __future__ import annotations
 
 import base64
+import html
 import os
 import secrets
 import sys
@@ -51,7 +52,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         msg = "Authorization complete. You can close this tab and return to the terminal."
         if _Handler.error:
-            msg = f"Authorization failed: {_Handler.error}. Check the terminal."
+            msg = f"Authorization failed: {html.escape(_Handler.error)}. Check the terminal."
         self.wfile.write(f"<html><body><h3>{msg}</h3></body></html>".encode())
 
     def log_message(self, *args):  # silence default logging

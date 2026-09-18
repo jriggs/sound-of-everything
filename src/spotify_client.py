@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import base64
 import time
-from typing import Any, Iterable
+from typing import Any
 
 import requests
 
@@ -93,7 +93,10 @@ class SpotifyClient:
         # exhausted) — don't sleep through it, surface immediately so the caller
         # can stop. A small one is a transient burst limit — retry briefly.
         if resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", "2"))
+            ra = resp.headers.get("Retry-After", "2").strip()
+            # Retry-After is usually seconds, but the spec also allows an HTTP-date;
+            # treat any non-integer as a hard throttle rather than crashing on int().
+            retry_after = int(ra) if ra.isdigit() else 999
             if retry_after > 120:
                 raise RateLimitError(
                     f"{method} {path}: rate limited, Retry-After={retry_after}s (hard throttle)")
@@ -128,21 +131,6 @@ class SpotifyClient:
         if market:
             params["market"] = market
         return self._json("GET", "/search", params=params)
-
-    def tracks(self, ids: Iterable[str]) -> list[dict]:
-        ids = [i for i in ids if i]
-        out: list[dict] = []
-        for i in range(0, len(ids), 50):
-            chunk = ids[i:i + 50]
-            data = self._json("GET", "/tracks", params={"ids": ",".join(chunk)})
-            out.extend(data.get("tracks", []))
-        return out
-
-    def artist_top_track_uri(self, artist_id: str, market: str = "US") -> str | None:
-        data = self._json("GET", f"/artists/{artist_id}/top-tracks",
-                          params={"market": market})
-        items = data.get("tracks", [])
-        return items[0]["uri"] if items else None
 
     def find_my_playlist(self, name: str) -> dict | None:
         offset = 0

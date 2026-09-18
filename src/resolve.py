@@ -9,11 +9,14 @@ Two strategies (set ``build.strategy`` in config.yaml):
             endpoint still open to Development-Mode apps in 2026 — /tracks batch,
             /artists/top-tracks and the `popularity` field are all blocked).
 
-`fresh` is CACHED (data/tracks.json) so runs stay cheap:
+`fresh` is CACHED (data/tracks.json) so runs are cheap and resumable:
   * A brand-new genre is seeded instantly from everynoise's pick (source
     "everynoise"), then gets a real search on a later run.
-  * Each run re-searches only the ``refresh_batch`` genres whose cached pick is
-    oldest, so songs rotate over time without re-searching all ~6k every week.
+  * Genres are refreshed most-stale-first (``refresh_batch`` per run, 0 = all).
+    For each, the first search result NOT already in the playlist is chosen, so
+    no two genres share a song and a refresh always yields a different track. A
+    genre only advances in the queue when it truly updates; a throttled or empty
+    one keeps its pick, stays most-stale, and is retried next run.
 """
 
 from __future__ import annotations
@@ -119,7 +122,7 @@ def resolve_fresh(genres: list[Genre], client: SpotifyClient, cache: dict,
     t0 = time.time()
     done = rl_streak = 0
     for i, g in enumerate(to_refresh, 1):
-        cur = cache[g.name]["uri"]
+        cur = cache[g.name].get("uri")  # guard against a malformed cache entry
         try:
             new_uri = _pick_unused(g.name)  # first candidate not already in the playlist
         except RateLimitError:
