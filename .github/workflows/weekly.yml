@@ -1,0 +1,45 @@
+name: Weekly playlist refresh
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"   # every Monday at 08:00 UTC
+  workflow_dispatch: {}     # lets you run it manually from the Actions tab
+
+permissions:
+  contents: write            # allow committing the updated data/ snapshot
+
+concurrency:
+  group: playlist-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Build / refresh playlist
+        env:
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
+          SPOTIFY_PLAYLIST_ID: ${{ secrets.SPOTIFY_PLAYLIST_ID }}
+        run: python -m src.build_playlist
+
+      - name: Commit updated snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --quiet --staged; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: weekly playlist refresh $(date -u +%F)"
+            git push
+          fi

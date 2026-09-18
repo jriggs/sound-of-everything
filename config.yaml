@@ -1,0 +1,32 @@
+# Playlist configuration for "The Sound of Everything (Updated Weekly)"
+
+playlist:
+  name: "The Sound of Everything (Updated Weekly)"
+  # Kept under Spotify's 300-char limit. {date} is filled in at build time.
+  description: >-
+    One track per genre, sourced from Every Noise at Once (everynoise.com).
+    A community-maintained, weekly-updated revival of the original
+    "The Sound of Everything". Not affiliated with Spotify. Updated {date}.
+  public: true
+
+source:
+  everynoise_url: "https://everynoise.com/"
+
+build:
+  # "faithful" = use everynoise's representative track per genre (fast, closest
+  #              to the original). "fresh" = each genre's representative artist's
+  #              CURRENT top track, so songs rotate week to week (~1 API call/genre).
+  # Using "fresh" so the weekly GitHub Actions job (which can't reach everynoise
+  # from its cloud IP and uses the cached genre list) still refreshes the music
+  # via the Spotify API. A fresh run makes ~5-6k API calls; allow ~15-30 min.
+  strategy: "fresh"
+  market: "US"          # market used for "fresh" searches
+  max_tracks: 10000     # Spotify's hard playlist cap
+
+  # "fresh" caching (data/tracks.json) so weekly runs stay cheap:
+  refresh_batch: 500        # genres re-searched per run, oldest first (rotates
+                            # the whole list through search over ~13 weeks at 500).
+                            # New genres are always resolved. Raise to rotate faster.
+  seed_from_everynoise: true  # first time a genre is seen, seed everynoise's pick
+                            # instantly (high quality), then rotate it to a search
+                            # pick on a later run. false = search every new genre now.
