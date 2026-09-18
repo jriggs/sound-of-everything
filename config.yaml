@@ -24,9 +24,11 @@ build:
   max_tracks: 10000     # Spotify's hard playlist cap
 
   # "fresh" caching (data/tracks.json) so weekly runs stay cheap:
-  refresh_batch: 500        # genres re-searched per run, oldest first (rotates
-                            # the whole list through search over ~13 weeks at 500).
-                            # New genres are always resolved. Raise to rotate faster.
+  refresh_batch: 200        # genres re-searched per run, oldest first. Kept modest
+                            # so the weekly cloud run stays fast and under Spotify's
+                            # rate limit. New genres are always resolved. For a big
+                            # catch-up, run locally with REFRESH_BATCH=2000 (env var
+                            # overrides this) rather than raising it for every run.
   pause_ms: 100             # small pause between searches to smooth the request
                             # rate and avoid tripping Spotify's rate limiter.
   seed_from_everynoise: true  # first time a genre is seen, seed everynoise's pick

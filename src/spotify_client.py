@@ -32,7 +32,7 @@ class SpotifyError(RuntimeError):
 
 class SpotifyClient:
     def __init__(self, client_id: str, client_secret: str, refresh_token: str,
-                 session: requests.Session | None = None):
+                 session: requests.Session | None = None, log=None):
         if not (client_id and client_secret and refresh_token):
             raise SpotifyError(
                 "Missing credentials. Set SPOTIFY_CLIENT_ID, "
@@ -43,6 +43,7 @@ class SpotifyClient:
         self.client_secret = client_secret
         self.refresh_token = refresh_token
         self.session = session or requests.Session()
+        self._log = log or (lambda *a: None)
         self._access_token: str | None = None
         self._expires_at = 0.0
 
@@ -85,6 +86,7 @@ class SpotifyClient:
         # Rate limited: honour Retry-After (capped so a bad value can't stall us).
         if resp.status_code == 429 and _retry < 6:
             wait = min(int(resp.headers.get("Retry-After", "2")) + 1, 60)
+            self._log(f"  rate limited by Spotify — waiting {wait}s (retry {_retry + 1}/6)")
             time.sleep(wait)
             return self._request(method, path, params=params, json=json, _retry=_retry + 1)
         # Token expired mid-flight: force one refresh and retry.

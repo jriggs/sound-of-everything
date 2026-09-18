@@ -21,6 +21,7 @@ import pathlib
 
 from . import genres as genres_mod
 from .localenv import load_dotenv
+from .log import new_logger
 from .resolve import resolve
 from .spotify_client import SpotifyClient
 
@@ -48,7 +49,7 @@ def build_description(template: str) -> str:
     return desc[:300]  # Spotify caps descriptions at 300 chars
 
 
-def get_or_create_playlist(client: SpotifyClient, cfg: dict, state: dict) -> dict:
+def get_or_create_playlist(client: SpotifyClient, cfg: dict, state: dict, log) -> dict:
     name = cfg["playlist"]["name"]
     public = bool(cfg["playlist"].get("public", True))
 
@@ -58,63 +59,72 @@ def get_or_create_playlist(client: SpotifyClient, cfg: dict, state: dict) -> dic
             return client._json("GET", f"/playlists/{pinned}",
                                 params={"fields": "id,name,external_urls"})
         except Exception:
-            print(f"  pinned playlist {pinned} not reachable; falling back to name lookup")
+            log(f"  pinned playlist {pinned} not reachable; falling back to name lookup")
 
     existing = client.find_my_playlist(name)
     if existing:
         return existing
 
-    print(f"  creating new playlist: {name!r}")
+    log(f"  creating new playlist: {name!r}")
     return client.create_playlist(name, public,
                                   build_description(cfg["playlist"]["description"]))
 
 
 def main() -> None:
     load_dotenv()  # picks up .env locally; no-op in CI where secrets are real env vars
+    log = new_logger()
     cfg = load_config()
     DATA.mkdir(exist_ok=True)
     state_path = DATA / "state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
 
+    # Env overrides let a local run crank the batch without editing config.yaml,
+    # e.g. REFRESH_BATCH=2000 python -m src.build_playlist
+    if _env("REFRESH_BATCH"):
+        cfg["build"]["refresh_batch"] = int(_env("REFRESH_BATCH"))
+    if _env("PAUSE_MS"):
+        cfg["build"]["pause_ms"] = int(_env("PAUSE_MS"))
+
     strategy = cfg["build"].get("strategy", "faithful")
     market = cfg["build"].get("market", "US")
     max_tracks = int(cfg["build"].get("max_tracks", 10000))
 
-    print("1/5 fetching genres from everynoise.com ...")
+    log("1/5 fetching genres from everynoise.com ...")
     cache_path = DATA / "genres.json"
     try:
         genre_list = genres_mod.fetch_genres(cfg["source"]["everynoise_url"])
-        print(f"    got {len(genre_list)} genres (live)")
+        log(f"    got {len(genre_list)} genres (live)")
         cache_path.write_text(
             json.dumps([g.to_dict() for g in genre_list], indent=2, ensure_ascii=False))
     except Exception as e:  # noqa: BLE001 - fall back to the committed cache
         if not cache_path.exists():
             raise
         genre_list = genres_mod.load_cached(cache_path)
-        print(f"    live fetch failed ({e});")
-        print(f"    using cached {len(genre_list)} genres from {cache_path.name} "
-              "(new genres are only picked up when the live fetch succeeds — e.g. a local run)")
+        log(f"    live fetch failed ({e});")
+        log(f"    using cached {len(genre_list)} genres from {cache_path.name} "
+            "(new genres are only picked up when the live fetch succeeds — e.g. a local run)")
 
     client = SpotifyClient(_env("SPOTIFY_CLIENT_ID"),
                            _env("SPOTIFY_CLIENT_SECRET"),
-                           _env("SPOTIFY_REFRESH_TOKEN"))
+                           _env("SPOTIFY_REFRESH_TOKEN"),
+                           log=log)
     me = client.me()
-    print(f"    authenticated as {me.get('display_name') or me.get('id')} ({me.get('id')})")
+    log(f"    authenticated as {me.get('display_name') or me.get('id')} ({me.get('id')})")
 
     tracks_cache_path = DATA / "tracks.json"
     track_cache = json.loads(tracks_cache_path.read_text()) if tracks_cache_path.exists() else {}
-    print(f"2/5 resolving tracks (strategy={strategy}, cache={len(track_cache)} entries) ...")
-    pairs = resolve(genre_list, strategy, client, track_cache, cfg["build"], market, max_tracks)
+    log(f"2/5 resolving tracks (strategy={strategy}, cache={len(track_cache)} entries) ...")
+    pairs = resolve(genre_list, strategy, client, track_cache, cfg["build"], market, max_tracks, log)
     uris = [u for _, u in pairs]
     tracks_cache_path.write_text(json.dumps(track_cache, indent=2, ensure_ascii=False))
-    print(f"    {len(uris)} unique tracks (cache now {len(track_cache)} entries)")
+    log(f"    {len(uris)} unique tracks (cache now {len(track_cache)} entries)")
 
-    print("3/5 locating playlist ...")
-    playlist = get_or_create_playlist(client, cfg, state)
+    log("3/5 locating playlist ...")
+    playlist = get_or_create_playlist(client, cfg, state, log)
     pid = playlist["id"]
     url = playlist.get("external_urls", {}).get("spotify", f"https://open.spotify.com/playlist/{pid}")
 
-    print("4/5 updating details + tracks ...")
+    log("4/5 updating details + tracks ...")
     client.update_playlist_details(
         pid,
         name=cfg["playlist"]["name"],
@@ -123,7 +133,7 @@ def main() -> None:
     )
     client.replace_playlist_items(pid, uris)
 
-    print("5/5 writing snapshot ...")
+    log("5/5 writing snapshot ...")
     snapshot = {
         "name": cfg["playlist"]["name"],
         "playlist_id": pid,
@@ -137,8 +147,8 @@ def main() -> None:
     state.update({"playlist_id": pid, "url": url})
     state_path.write_text(json.dumps(state, indent=2))
 
-    print(f"\nDone. {len(uris)} tracks in {cfg['playlist']['name']!r}")
-    print(url)
+    log(f"Done. {len(uris)} tracks in {cfg['playlist']['name']!r}")
+    log(url)
 
 
 if __name__ == "__main__":

@@ -89,6 +89,9 @@ def resolve_fresh(genres: list[Genre], client: SpotifyClient, cache: dict,
     present = [g for g in genres if g.name in cache]
     present.sort(key=lambda g: cache[g.name].get("updated_utc", ""))
     to_refresh = present[:max(refresh_batch, 0)]
+    total = len(to_refresh)
+    log(f"  refreshing {total} genres via search (batch={refresh_batch}, pause={int(pause * 1000)}ms)")
+    t0 = time.time()
     for i, g in enumerate(to_refresh, 1):
         entry = _resolve_one(client, g, market)
         if entry:
@@ -96,12 +99,16 @@ def resolve_fresh(genres: list[Genre], client: SpotifyClient, cache: dict,
         else:  # keep existing pick, but bump so we don't retry it all run
             cache[g.name]["updated_utc"] = _now()
         time.sleep(pause)
-        if i % 200 == 0:
-            log(f"  refreshed {i}/{len(to_refresh)} genres via search")
-    if to_refresh:
-        log(f"  refreshed {len(to_refresh)} genres via search")
+        if i % 50 == 0 or i == total:
+            el = time.time() - t0
+            rate = i / el if el else 0
+            eta = (total - i) / rate if rate else 0
+            log(f"    {i}/{total} searched — {rate:.1f}/s, eta {eta:4.0f}s")
 
     # 3. Build ordered pairs from the cache, following the current genre order.
+    n_search = sum(1 for v in cache.values() if v.get("source") == "search")
+    n_seed = sum(1 for v in cache.values() if v.get("source") == "everynoise")
+    log(f"  cache: {n_search} search-picked, {n_seed} still awaiting rotation")
     return [(g, cache[g.name]["uri"]) for g in genres
             if cache.get(g.name, {}).get("uri")]
 

@@ -26,11 +26,12 @@ jobs:
 
       - name: Build / refresh playlist
         env:
+          PYTHONUNBUFFERED: "1"   # stream progress logs live to the Actions console
           SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
           SPOTIFY_REFRESH_TOKEN: ${{ secrets.SPOTIFY_REFRESH_TOKEN }}
           SPOTIFY_PLAYLIST_ID: ${{ secrets.SPOTIFY_PLAYLIST_ID }}
-        run: python -m src.build_playlist
+        run: python -u -m src.build_playlist
 
       - name: Commit updated snapshot
         run: |
