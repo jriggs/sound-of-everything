@@ -23,7 +23,7 @@ from . import genres as genres_mod
 from .localenv import load_dotenv
 from .log import new_logger
 from .resolve import resolve
-from .spotify_client import SpotifyClient
+from .spotify_client import RateLimitError, SpotifyClient
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
@@ -108,30 +108,39 @@ def main() -> None:
                            _env("SPOTIFY_CLIENT_SECRET"),
                            _env("SPOTIFY_REFRESH_TOKEN"),
                            log=log)
-    me = client.me()
-    log(f"    authenticated as {me.get('display_name') or me.get('id')} ({me.get('id')})")
+    try:
+        me = client.me()
+        log(f"    authenticated as {me.get('display_name') or me.get('id')} ({me.get('id')})")
 
-    tracks_cache_path = DATA / "tracks.json"
-    track_cache = json.loads(tracks_cache_path.read_text()) if tracks_cache_path.exists() else {}
-    log(f"2/5 resolving tracks (strategy={strategy}, cache={len(track_cache)} entries) ...")
-    pairs = resolve(genre_list, strategy, client, track_cache, cfg["build"], market, max_tracks, log)
-    uris = [u for _, u in pairs]
-    tracks_cache_path.write_text(json.dumps(track_cache, indent=2, ensure_ascii=False))
-    log(f"    {len(uris)} unique tracks (cache now {len(track_cache)} entries)")
+        tracks_cache_path = DATA / "tracks.json"
+        track_cache = json.loads(tracks_cache_path.read_text()) if tracks_cache_path.exists() else {}
+        log(f"2/5 resolving tracks (strategy={strategy}, cache={len(track_cache)} entries) ...")
+        pairs = resolve(genre_list, strategy, client, track_cache, cfg["build"], market, max_tracks, log)
+        uris = [u for _, u in pairs]
+        tracks_cache_path.write_text(json.dumps(track_cache, indent=2, ensure_ascii=False))
+        log(f"    {len(uris)} unique tracks (cache now {len(track_cache)} entries)")
 
-    log("3/5 locating playlist ...")
-    playlist = get_or_create_playlist(client, cfg, state, log)
-    pid = playlist["id"]
-    url = playlist.get("external_urls", {}).get("spotify", f"https://open.spotify.com/playlist/{pid}")
+        log("3/5 locating playlist ...")
+        playlist = get_or_create_playlist(client, cfg, state, log)
+        pid = playlist["id"]
+        url = playlist.get("external_urls", {}).get("spotify", f"https://open.spotify.com/playlist/{pid}")
 
-    log("4/5 updating details + tracks ...")
-    client.update_playlist_details(
-        pid,
-        name=cfg["playlist"]["name"],
-        description=build_description(cfg["playlist"]["description"]),
-        public=bool(cfg["playlist"].get("public", True)),
-    )
-    client.replace_playlist_items(pid, uris)
+        log("4/5 updating details + tracks ...")
+        client.update_playlist_details(
+            pid,
+            name=cfg["playlist"]["name"],
+            description=build_description(cfg["playlist"]["description"]),
+            public=bool(cfg["playlist"].get("public", True)),
+        )
+        client.replace_playlist_items(pid, uris)
+    except RateLimitError as e:
+        # The whole app is being rate-limited (quota). Do nothing this run rather
+        # than crash — the cache/timestamps are untouched, so the next run resumes
+        # exactly where this one would have. Exits cleanly (green in CI).
+        log(f"Spotify is rate-limiting this app right now ({e}).")
+        log("Skipping this run — nothing changed. It clears on its own; the next "
+            "run picks up where it left off.")
+        return
 
     log("5/5 writing snapshot ...")
     snapshot = {

@@ -89,12 +89,16 @@ class SpotifyClient:
             headers={"Authorization": f"Bearer {self._token()}"},
             params=params, json=json, timeout=30,
         )
-        # Rate limited: retry a couple of times with a short capped wait. If it
-        # persists, the app is being throttled hard — raise so callers can stop
-        # early rather than sleeping through a long (e.g. 60s x N) penalty.
+        # Rate limited. A large Retry-After means a hard/long penalty (quota
+        # exhausted) — don't sleep through it, surface immediately so the caller
+        # can stop. A small one is a transient burst limit — retry briefly.
         if resp.status_code == 429:
+            retry_after = int(resp.headers.get("Retry-After", "2"))
+            if retry_after > 120:
+                raise RateLimitError(
+                    f"{method} {path}: rate limited, Retry-After={retry_after}s (hard throttle)")
             if _retry < 2:
-                wait = min(int(resp.headers.get("Retry-After", "2")) + 1, 30)
+                wait = min(retry_after + 1, 30)
                 self._log(f"  rate limited by Spotify — waiting {wait}s (retry {_retry + 1}/2)")
                 time.sleep(wait)
                 return self._request(method, path, params=params, json=json, _retry=_retry + 1)
