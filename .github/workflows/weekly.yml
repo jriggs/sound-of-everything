@@ -2,7 +2,8 @@ name: Weekly playlist refresh
 
 on:
   schedule:
-    - cron: "0 8 * * 1"   # every Monday at 08:00 UTC
+    - cron: "27 9 * * 1"   # every Monday ~09:27 UTC (odd minute, off the busy
+                           # top-of-hour so GitHub is less likely to drop the run)
   workflow_dispatch: {}     # lets you run it manually from the Actions tab
 
 permissions:
