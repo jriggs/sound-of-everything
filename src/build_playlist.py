@@ -125,14 +125,16 @@ def main() -> None:
         pid = playlist["id"]
         url = playlist.get("external_urls", {}).get("spotify", f"https://open.spotify.com/playlist/{pid}")
 
-        log("4/5 updating details + tracks ...")
+        log("4/5 updating details + syncing changed tracks ...")
         client.update_playlist_details(
             pid,
             name=cfg["playlist"]["name"],
             description=build_description(cfg["playlist"]["description"]),
             public=bool(cfg["playlist"].get("public", True)),
         )
-        client.replace_playlist_items(pid, uris)
+        # Incremental: only add/remove tracks that actually changed, so unchanged
+        # tracks keep their "added at" time instead of the whole playlist re-stamping.
+        client.sync_playlist_items(pid, uris, log)
     except RateLimitError as e:
         # The whole app is being rate-limited (quota). Do nothing this run rather
         # than crash — the cache/timestamps are untouched, so the next run resumes

@@ -186,10 +186,66 @@ class SpotifyClient:
         raise SpotifyError(f"{method} {path}: rejected both 'uris' and 'items' fields")
 
     def replace_playlist_items(self, playlist_id: str, uris: list[str]) -> None:
-        """Replace the entire tracklist. Handles >100 items via replace+append."""
+        """Replace the entire tracklist. Handles >100 items via replace+append.
+
+        Note: this re-stamps EVERY track's "added at" time. Prefer
+        sync_playlist_items for incremental updates; this is only for a full reset.
+        """
         if not uris:
             self._items_call("PUT", playlist_id, [])
             return
         self._items_call("PUT", playlist_id, uris[:100])          # replace
         for i in range(100, len(uris), 100):
             self._items_call("POST", playlist_id, uris[i:i + 100])  # append
+
+    def get_playlist_uris(self, playlist_id: str) -> list[str]:
+        """Every track URI currently on the playlist, in order."""
+        uris: list[str] = []
+        offset = 0
+        while True:
+            data = self._json("GET", f"/playlists/{playlist_id}/items",
+                              params={"limit": 100, "offset": offset,
+                                      "fields": "items(track(uri),item(uri)),next"})
+            for it in data.get("items", []):
+                track = it.get("track") or it.get("item") or {}
+                if track.get("uri"):
+                    uris.append(track["uri"])
+            if data.get("next"):
+                offset += 100
+            else:
+                return uris
+
+    def _items_delete(self, playlist_id: str, uris: list[str]) -> None:
+        path = f"/playlists/{playlist_id}/items"
+        for field in ("tracks", "items"):  # body field name changed across the migration
+            body = {field: [{"uri": u} for u in uris]}
+            resp = self._request("DELETE", path, json=body)
+            if resp.status_code < 400:
+                return
+            if resp.status_code == 404 and path.endswith("/items"):
+                path = f"/playlists/{playlist_id}/tracks"
+                resp = self._request("DELETE", path, json=body)
+                if resp.status_code < 400:
+                    return
+            if resp.status_code != 400:
+                raise SpotifyError(f"DELETE {path} -> {resp.status_code}: {resp.text[:300]}")
+        raise SpotifyError(f"DELETE {path}: rejected both 'tracks' and 'items' fields")
+
+    def sync_playlist_items(self, playlist_id: str, desired_uris: list[str],
+                            log=lambda *a: None) -> dict:
+        """Incrementally update the playlist to match `desired_uris`: add only the
+        new tracks and remove only the departed ones. Unchanged tracks keep their
+        position and "added at" time (so only truly-changed tracks show as updated).
+        New tracks are appended (Spotify has no atomic in-place item replace)."""
+        current = self.get_playlist_uris(playlist_id)
+        cur_set, des_set = set(current), set(desired_uris)
+        to_remove = [u for u in dict.fromkeys(current) if u not in des_set]
+        to_add = [u for u in desired_uris if u not in cur_set]
+        log(f"    playlist has {len(current)} tracks; +{len(to_add)} new, -{len(to_remove)} removed, "
+            f"{len(current) - len(to_remove)} untouched")
+        for i in range(0, len(to_remove), 100):
+            self._items_delete(playlist_id, to_remove[i:i + 100])
+        for i in range(0, len(to_add), 100):
+            self._items_call("POST", playlist_id, to_add[i:i + 100])
+        return {"added": len(to_add), "removed": len(to_remove),
+                "unchanged": len(current) - len(to_remove)}
