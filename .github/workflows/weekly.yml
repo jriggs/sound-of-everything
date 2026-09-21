@@ -2,7 +2,7 @@ name: Weekly playlist refresh
 
 on:
   schedule:
-    - cron: "35 9 * * 1"           # 9:35 AM Eastern (temporary near-future slot to watch it fire today)
+    - cron: "35 9 * * 1"           # 9:35 AM Eastern, every Monday
       timezone: "America/New_York"  # DST-aware; runs at this local time (no UTC math)
   workflow_dispatch: {}     # lets you run it manually from the Actions tab
 
