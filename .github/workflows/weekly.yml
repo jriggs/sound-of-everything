@@ -1,6 +1,7 @@
 name: Weekly playlist refresh
 
 on:
+  # Scheduled runs always use this workflow as it exists on the default branch (main).
   schedule:
     - cron: "23 13 * * 2"   # Tuesday 13:23 UTC — plain UTC, odd minute off the top-of-hour.
                             # Next run is ~24h out, giving GitHub a full day to register it.
