@@ -24,12 +24,12 @@ build:
   max_tracks: 10000     # Spotify's hard playlist cap
 
   # "fresh" caching (data/tracks.json) so weekly runs stay cheap:
-  refresh_batch: 0          # 0 = try EVERY genre each run, MOST STALE first. A
-                            # genre only advances in the queue when search returns
-                            # a real track; when Spotify throttles, the circuit
-                            # breaker stops the run and whatever wasn't reached stays
-                            # most stale and is picked up first next run. Set a
-                            # positive number to cap how many are tried per run.
+  refresh_batch: 500        # re-pick at most this many genres per run, MOST STALE
+                            # first, so a run never mass-updates the playlist. A
+                            # genre only advances in the queue when search returns a
+                            # real track; when Spotify throttles, the circuit breaker
+                            # stops early and the rest stay most-stale for next run.
+                            # 0 = try all (relies on the throttle to cap it).
                             # (REFRESH_BATCH env var overrides this.)
   pause_ms: 100             # small pause between searches to smooth the request
                             # rate and avoid tripping Spotify's rate limiter.
