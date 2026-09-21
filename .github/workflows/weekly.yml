@@ -2,8 +2,8 @@ name: Weekly playlist refresh
 
 on:
   schedule:
-    - cron: "38 9 * * 1"           # 9:38 AM Eastern, every Monday
-      timezone: "America/New_York"  # DST-aware; always 9:38 local (no UTC math)
+    - cron: "35 9 * * 1"           # 9:35 AM Eastern (temporary near-future slot to watch it fire today)
+      timezone: "America/New_York"  # DST-aware; runs at this local time (no UTC math)
   workflow_dispatch: {}     # lets you run it manually from the Actions tab
 
 permissions:
@@ -16,10 +16,11 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 60          # safety net; a healthy full run is ~25 min
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6      # Node 24 (v4 ran Node 20, removed from runners 2026-09-16)
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6  # Node 24
         with:
           python-version: "3.12"
 
@@ -43,5 +44,7 @@ jobs:
             echo "No changes to commit."
           else
             git commit -m "chore: weekly playlist refresh $(date -u +%F)"
-            git push
+            # rebase onto anything pushed during the run, then push (avoids a
+            # non-fast-forward failure if a commit landed while we were running)
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push
           fi
