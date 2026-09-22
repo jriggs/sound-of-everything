@@ -2,6 +2,10 @@
 
 **A living playlist with one song for every genre of music — thousands of them — that refreshes itself every week.**
 
+<p align="center">
+  <img src="assets/cover.jpg" alt="The Sound of Everything — a vinyl record built from thousands of genre names arranged in concentric rainbow rings" width="600">
+</p>
+
 ▶ **Listen:** https://open.spotify.com/playlist/3yn8CQlQ3Q903K0LsoSkPY
 
 ## What it is
