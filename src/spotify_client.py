@@ -84,11 +84,22 @@ class SpotifyClient:
     def _request(self, method: str, path: str, *, params=None, json=None,
                  _retry=0) -> requests.Response:
         url = path if path.startswith("http") else f"{API_BASE}{path}"
-        resp = self.session.request(
-            method, url,
-            headers={"Authorization": f"Bearer {self._token()}"},
-            params=params, json=json, timeout=30,
-        )
+        try:
+            resp = self.session.request(
+                method, url,
+                headers={"Authorization": f"Bearer {self._token()}"},
+                params=params, json=json, timeout=(10, 30),
+            )
+        except (requests.Timeout, requests.ConnectionError) as e:
+            # Network hiccup (read/connect timeout, dropped connection) — retry
+            # with backoff rather than killing a long run on one bad request.
+            if _retry < 4:
+                wait = 2 ** _retry
+                self._log(f"  network error ({type(e).__name__}); retrying in {wait}s "
+                          f"(retry {_retry + 1}/4)")
+                time.sleep(wait)
+                return self._request(method, path, params=params, json=json, _retry=_retry + 1)
+            raise SpotifyError(f"{method} {path}: network error after retries: {e}") from e
         # Rate limited. A large Retry-After means a hard/long penalty (quota
         # exhausted) — don't sleep through it, surface immediately so the caller
         # can stop. A small one is a transient burst limit — retry briefly.
